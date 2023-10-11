@@ -6,25 +6,27 @@ import subprocess
 import json
 
 # Define
-api_key = "sk-xxx"
+api_key = "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"
 environment = {"path": "C:\\AI\\"}
 conversation_file = os.path.join(environment['path'], "conversation.json")
 conversation_history = []
 last_command = ''
 last_output = ''
+dir_tree = ''
 ai_job = input("What would you like your AI to accomplish?: ")
 show_ai_thinking = input("Do you want to see AI's thinking? (yes/no): ")
 
 # Lock to synchronize access to shared resources
-lock = threading.Lock()
+#lock = threading.Lock()
 
 # Function to print a colorful log
 def log(message, log_type="task"):
     colors = {
-        "task": "\033[95m",      # Purple
+        "thoughts": "\033[95m",  # Purple
         "important": "\033[93m", # Yellow
         "windows": "\033[96m",   # Cyan
         "python": "\033[92m",    # Green
+        "task": "\033[94m",      # Blue
         "error": "\033[91m",     # Red
         "reset": "\033[0m",      # Reset color
     }
@@ -52,13 +54,14 @@ Here's what you can do and some examples.
 
 Abilities:
 1. Any Python Command (simply write the python command)
-PYT: print("Hello, world!") END CODE
+PYT: [single-line python code] END CODE
 
 2. Any Windows CMD (simply write the console command)
 CMD: [cmd][args] END CODE
 
-Your input should ONLY be commands formatted as shown in the commands above. Do NOT respond in sentences. You can ONLY use one command at a time.
-Every time you create a file, check (read) it using your 2nd ability for completion of the job or code errors.
+Your input should ONLY be commands formatted as shown above. Do NOT respond in sentences. You can ONLY use one command at a time.
+You can only use one command at a time and it has to be one line, so if you are writing to a file, use \ n to do multiple lines (remove the whitespace between \ & n). 
+After creating the file, check for it in the direcotry tree.
 
 You are currently in the directory: {environment['path']}
     
@@ -80,7 +83,7 @@ def save_conversation():
 
 # Function to generate tasks within the defined path
 def generate_task():
-    global last_command, last_output, ai_job
+    global last_command, last_output, ai_job, dir_tree
     # Use the ChatGPT API to generate tasks or goals
     openai.api_key = api_key
     prompt = ''
@@ -92,7 +95,7 @@ def generate_task():
 Bot Job: {ai_job}
 ---------------------------
 
-Directory Tree: {os.system('tree /f')}
+Directory Tree: {dir_tree}
 
 Your Previous Command: 
 {last_command}
@@ -104,6 +107,12 @@ What is the next code step to complete the job ({environment["path"]}).
 """
     else:
         prompt = f"""{explain_abilities()}
+
+---------------------------
+Bot Job: {ai_job}
+---------------------------
+
+Directory Tree: {dir_tree}
 
 What is the next code step to complete the job ({environment["path"]}). Reply only with one of your ability commands.
 """
@@ -117,68 +126,66 @@ What is the next code step to complete the job ({environment["path"]}). Reply on
     task = response.choices[0].text.strip()
     return task
 
-# Function to perform tasks within the defined path
-def perform_task(task):
-    global conversation_history, last_command, last_output
-    log (task)
-    task = task[5:-9]
-    if ("CMD:" in task or "PYT:" in task and "END CODE"):
-        if show_ai_thinking.lower() == "yes":
-            log(task)
-        else:
-            pass
-        conversation_history.append({"AI": task})
-        
-        try:
-            output = ''
-            try:
-                result = subprocess.run(task, shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                output = f"Command executed with return code: {result}"
-                last_output = output
-                log(f"Executed Windows CMD:\n{task}\nOutput:\n{output}", "windows")
-            except Exception as e:
-                if show_ai_thinking.lower() == "yes":
-                    log(f"Error executing windows command: {str(e)}", "error")
-                else:
-                    pass
-        except:
-            output = ''
-            try:
-                output = exec(task)
-                log(f"Executed Python CMD:\n{task}\nOutput:\n{output}", "windows")
-            except Exception as e:
-                if show_ai_thinking.lower() == "yes":
-                    log(f"Error executing python command: {str(e)}", "error")
-                else:
-                    pass
+def perform_task(response):
+    global last_command, last_output
+    if (show_ai_thinking):
+        log(response, 'thoughts')
+    else:
+        pass
     
-    last_command = task
-    last_output = output
+    command = ''
 
+    if 'PYT:' in response:
+        command = response.split('PYT:')[1].split('END CODE')[0].strip()
+        try:
+            result = exec(command)
+            if result:
+                log(f"Executed {command} successfully", "success")  
+            else:
+                log("Python command failed", "error")
+            last_output = result
+        except Exception as e:
+            last_output = str(e)
+    elif 'CMD:' in response:
+        command = response.split('CMD:')[1].split('END CODE')[0].strip()
+        try:
+            result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if result.returncode == 0:
+                log(f"Executed {command} successfully", "success")
+            else:
+                log("Command failed", "error")
+            last_output = result.stdout
+        except Exception as e:
+            last_output = str(e.stderr)
+  
     # Store the AI's response in the conversation history
     conversation_history.append({"System": "Task completed."})
     save_conversation()
 
 # Function to run the AI
 def run_ai():
+    global dir_tree
     while True:
         try:
             task = generate_task()
             perform_task(task)
+            dir_tree = subprocess.run('tree /f', shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             time.sleep(3)
         except:
             pass
 
-# Number of AI instances you want to run
-num_instances = 1  # Change this as needed
+run_ai()
 
-# Create and start multiple threads
-threads = []
-for _ in range(num_instances):
-    thread = threading.Thread(target=run_ai)
-    threads.append(thread)
-    thread.start()
+# # Number of AI instances you want to run
+# num_instances = 2  # Change this as needed
 
-# Wait for all threads to finish
-for thread in threads:
-    thread.join()
+# # Create and start multiple threads
+# threads = []
+# for _ in range(num_instances):
+#     thread = threading.Thread(target=run_ai)
+#     threads.append(thread)
+#     thread.start()
+
+# # Wait for all threads to finish
+# for thread in threads:
+#     thread.join()
