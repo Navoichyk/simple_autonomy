@@ -6,7 +6,7 @@ import subprocess
 import json
 
 # Define
-api_key = "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"
+api_key = "sk-xxx"
 environment = {"path": "C:\\AI\\"}
 conversation_file = os.path.join(environment['path'], "conversation.json")
 conversation_history = []
